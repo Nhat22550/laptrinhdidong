@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, SafeAreaView, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, SafeAreaView, Alert, ActivityIndicator
 } from 'react-native';
 import { Phone, Lock, User, Eye, EyeOff, ArrowRight } from 'lucide-react-native'; 
 import { AntDesign } from '@expo/vector-icons'; 
+
+// --- 1. IMPORT FIREBASE ---
+import { auth } from '../constants/firebaseConfig';// Đảm bảo đường dẫn đúng tới file config bạn vừa tạo
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  updateProfile 
+} from 'firebase/auth';
 
 interface AuthScreenProps {
   onAuthenticated?: () => void;
@@ -14,18 +22,65 @@ interface AuthScreenProps {
 export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false); // Thêm trạng thái loading
 
-  // SỬ DỤNG SỐ ĐIỆN THOẠI
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  const handleSubmit = () => {
+  // --- 2. HÀM XỬ LÝ LOGIC ---
+  const handleSubmit = async () => {
+    // Validate cơ bản
     if (!phoneNumber || !password) {
-      Alert.alert('Thông báo', 'Vui lòng điền đầy đủ thông tin!');
+      Alert.alert('Thông báo', 'Vui lòng điền đầy đủ số điện thoại và mật khẩu!');
       return;
     }
-    if (onAuthenticated) onAuthenticated();
+    if (!isLogin && !name) {
+      Alert.alert('Thông báo', 'Vui lòng nhập họ tên!');
+      return;
+    }
+
+    setLoading(true);
+
+    // Mẹo: Biến SĐT thành Email giả để dùng Password Auth
+    const fakeEmail = `${phoneNumber}@app.com`; 
+
+    try {
+      if (isLogin) {
+        // --- XỬ LÝ ĐĂNG NHẬP ---
+        const userCredential = await signInWithEmailAndPassword(auth, fakeEmail, password);
+        console.log('Đăng nhập thành công:', userCredential.user.email);
+        Alert.alert('Thành công', 'Đăng nhập thành công!');
+        if (onAuthenticated) onAuthenticated();
+      } else {
+        // --- XỬ LÝ ĐĂNG KÝ ---
+        const userCredential = await createUserWithEmailAndPassword(auth, fakeEmail, password);
+        
+        // Cập nhật tên hiển thị cho user
+        if (auth.currentUser) {
+          await updateProfile(auth.currentUser, {
+            displayName: name
+          });
+        }
+        
+        console.log('Đăng ký thành công:', userCredential.user.email);
+        Alert.alert('Thành công', 'Tạo tài khoản thành công!');
+        if (onAuthenticated) onAuthenticated();
+      }
+    } catch (error: any) {
+      console.error(error);
+      let msg = error.message;
+      
+      // Dịch lỗi Firebase sang tiếng Việt cho thân thiện
+      if (msg.includes('auth/email-already-in-use')) msg = 'Số điện thoại này đã được đăng ký!';
+      else if (msg.includes('auth/invalid-credential')) msg = 'Sai số điện thoại hoặc mật khẩu!';
+      else if (msg.includes('auth/weak-password')) msg = 'Mật khẩu phải có ít nhất 6 ký tự!';
+      else if (msg.includes('auth/user-not-found')) msg = 'Tài khoản không tồn tại!';
+      
+      Alert.alert('Lỗi', msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSocialLogin = (platform: string) => {
@@ -74,12 +129,13 @@ export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthSc
               <View style={styles.inputContainer}>
                 <Phone size={20} color="#9ca3af" style={styles.inputIcon} /> 
                 <TextInput
-                  placeholder="0912 345 678"
+                  placeholder="0912345678"
                   keyboardType="phone-pad"
                   style={styles.input}
                   placeholderTextColor="#9ca3af"
                   value={phoneNumber}
                   onChangeText={setPhoneNumber}
+                  autoCapitalize="none"
                 />
               </View>
             </View>
@@ -115,12 +171,19 @@ export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthSc
 
             {/* Nút Submit */}
             <TouchableOpacity 
-              style={styles.button} 
+              style={[styles.button, loading && { opacity: 0.7 }]} 
               activeOpacity={0.8}
               onPress={handleSubmit}
+              disabled={loading}
             >
-              <Text style={styles.buttonText}>{isLogin ? 'Đăng Nhập' : 'Đăng Ký'}</Text>
-              <ArrowRight size={20} color="white" />
+              {loading ? (
+                 <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>{isLogin ? 'Đăng Nhập' : 'Đăng Ký'}</Text>
+                  <ArrowRight size={20} color="white" />
+                </>
+              )}
             </TouchableOpacity>
 
             {/* Mạng xã hội */}
@@ -148,7 +211,12 @@ export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthSc
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>{isLogin ? "Chưa có tài khoản? " : "Đã có tài khoản? "}</Text>
-            <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
+            <TouchableOpacity onPress={() => {
+                setIsLogin(!isLogin);
+                // Reset form khi chuyển mode
+                setPassword('');
+                setName('');
+            }}>
               <Text style={styles.linkText}>{isLogin ? 'Đăng Ký Ngay' : 'Đăng Nhập'}</Text>
             </TouchableOpacity>
           </View>
