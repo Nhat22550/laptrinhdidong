@@ -1,7 +1,7 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 // Nếu bạn muốn dùng Auth, Firestore, Storage thì import thêm ở đây
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getDatabase } from 'firebase/database';
 
 // Dán cấu hình bạn vừa copy từ bước 1 vào đây
 const firebaseConfig = {
@@ -11,12 +11,14 @@ const firebaseConfig = {
   storageBucket: "myapp-test-75c99.firebasestorage.app",
   messagingSenderId: "609854959412",
   appId: "1:609854959412:web:d5c44d29ce8883a5333f61",
-  measurementId: "G-VXVYBMP64S"
+  measurementId: "G-VXVYBMP64S",
+  databaseURL: "https://myapp-test-75c99-default-rtdb.firebaseio.com"
 };
 
 // Khởi tạo Firebase
-const app = initializeApp(firebaseConfig);
+// Nghĩa là: Nếu chưa có App nào thì tạo mới, còn nếu có rồi thì lấy cái cũ ra dùng
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Xuất các dịch vụ ra để dùng ở chỗ khác
+// Xuất các dịch vụ ra để dùng
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = getDatabase(app);

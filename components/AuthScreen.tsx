@@ -13,6 +13,7 @@ import {
   signInWithEmailAndPassword, 
   updateProfile 
 } from 'firebase/auth';
+import { getDatabase, ref, set } from 'firebase/database';
 
 interface AuthScreenProps {
   onAuthenticated?: () => void;
@@ -55,13 +56,22 @@ export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthSc
       } else {
         // --- XỬ LÝ ĐĂNG KÝ ---
         const userCredential = await createUserWithEmailAndPassword(auth, fakeEmail, password);
-        
-        // Cập nhật tên hiển thị cho user
-        if (auth.currentUser) {
-          await updateProfile(auth.currentUser, {
-            displayName: name
-          });
+        const user = userCredential.user; // Lấy user vừa tạo
+
+        // Cập nhật tên hiển thị
+        if (user) {
+          await updateProfile(user, { displayName: name });
         }
+
+        // 👇 ĐOẠN CODE MỚI: LƯU VÀO REALTIME DATABASE 👇
+        const db = getDatabase(); 
+        await set(ref(db, 'users/' + user.uid), {
+          phoneNumber: phoneNumber,
+          displayName: name,
+          email: fakeEmail,
+          role: "user", // Mặc định là user thường
+          createdAt: new Date().toISOString()
+        });
         
         console.log('Đăng ký thành công:', userCredential.user.email);
         Alert.alert('Thành công', 'Tạo tài khoản thành công!');

@@ -1,12 +1,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import React, { useEffect, useState } from 'react';
-import { auth, db } from '../constants/firebaseConfig';
+import { auth, db } from '../../constants/firebaseConfig';
 import { ref, get } from 'firebase/database';
-import { signOut } from 'firebase/auth'; // 1. Import hàm đăng xuất
+import { signOut } from 'firebase/auth'; 
+import AuthScreen from '../../components/AuthScreen'; 
 
-import AuthScreen from '../components/AuthScreen'; // (Lưu ý kiểm tra đường dẫn import)
-
-export default function HomeScreen() {
+export default function ProfileScreen() { // Đổi tên thành ProfileScreen cho dễ nhớ
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,11 +30,10 @@ export default function HomeScreen() {
     fetchData();
   }, []);
 
-  // 2. Hàm xử lý đăng xuất
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setUserData(null); // Xóa dữ liệu cũ
+      setUserData(null);
       Alert.alert("Đăng xuất thành công!");
     } catch (error) {
       Alert.alert("Lỗi đăng xuất");
@@ -44,42 +42,30 @@ export default function HomeScreen() {
 
   if (loading) return <ActivityIndicator size="large" style={{flex:1}} />;
 
-  // Nếu chưa đăng nhập (hoặc vừa đăng xuất xong) -> Hiện AuthScreen
   if (!auth.currentUser) {
-    return (
-      <AuthScreen 
-        onAuthenticated={() => {
-           fetchData(); 
-        }} 
-      />
-    );
+    return <AuthScreen onAuthenticated={() => fetchData()} />;
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Xin chào, {userData?.displayName}!</Text>
+      <Text style={styles.title}>Hồ sơ cá nhân</Text>
       
       <View style={styles.card}>
+        <Text style={styles.welcome}>Xin chào, {userData?.displayName}!</Text>
         <Text>📞 SĐT: {userData?.phoneNumber}</Text>
         <Text>📧 Email: {userData?.email}</Text>
-        {/* Logic hiển thị Admin */}
         <Text style={{fontWeight: 'bold', marginTop: 5}}>
             Chức vụ: {userData?.role === 'admin' ? '👑 SẾP (ADMIN)' : '👤 Khách hàng'}
         </Text>
       </View>
 
-      {/* Nút dành riêng cho Admin */}
       {userData?.role === 'admin' && (
         <TouchableOpacity style={styles.adminButton}>
           <Text style={styles.adminText}>Vào trang quản lý doanh thu</Text>
         </TouchableOpacity>
       )}
 
-      {/* 3. Nút Đăng Xuất (Ai cũng thấy) */}
-      <TouchableOpacity 
-        style={styles.logoutButton}
-        onPress={handleLogout}
-      >
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutText}>Đăng xuất</Text>
       </TouchableOpacity>
     </View>
@@ -87,13 +73,12 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' },
   title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  card: { backgroundColor: '#f0f0f0', padding: 20, borderRadius: 10, width: '100%', gap: 10 },
-  
-  adminButton: { marginTop: 20, backgroundColor: 'red', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
+  card: { backgroundColor: '#f8f9fa', padding: 20, borderRadius: 10, width: '100%', gap: 10, borderWidth: 1, borderColor: '#eee' },
+  welcome: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  adminButton: { marginTop: 20, backgroundColor: '#2f3640', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
   adminText: { color: 'white', fontWeight: 'bold' },
-
-  logoutButton: { marginTop: 10, padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
-  logoutText: { color: 'red', fontWeight: 'bold' } // Chữ màu đỏ cho dễ nhìn
+  logoutButton: { marginTop: 10, padding: 15, borderRadius: 8, width: '100%', alignItems: 'center', borderWidth: 1, borderColor: 'red' },
+  logoutText: { color: 'red', fontWeight: 'bold' }
 });
