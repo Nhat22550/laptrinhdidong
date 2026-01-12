@@ -1,29 +1,100 @@
 import { 
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, 
-  FlatList, Image, Dimensions, TextInput 
+  FlatList, Image, Dimensions, TextInput, useColorScheme, StatusBar, Animated 
 } from 'react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../constants/firebaseConfig'; 
-import { ref, get } from 'firebase/database';
-import { Ionicons } from '@expo/vector-icons'; // Import Icon kính lúp
+import { ref, get, onValue } from 'firebase/database'; 
+import { Ionicons } from '@expo/vector-icons'; 
 import AuthScreen from '../../components/AuthScreen'; 
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 48) / 2; 
+const BANNER_WIDTH = width - 32; 
+const BANNER_HEIGHT = 150; 
+
+const BANNERS = [
+  { id: '1', image: 'https://img.pikbest.com/wp/202347/coffee-donut-bliss-a-cup-of-java-donuts-and-beans-in-3d_9763148.jpg!f305cw' },
+  { id: '2', image: 'https://img.pikbest.com/backgrounds/20250808/sweet-indulgence-coffee-and-cake-in-perfect-harmony_11821993.jpg!f305cw' },
+  { id: '3', image: 'https://img.pikbest.com/ai/illus_our/20230413/2f3244b708d5717167194778bc4bc7ae.jpg!f305cw' },
+];
+
+const Colors = {
+  light: {
+    background: '#F9FAFB', card: '#FFFFFF', text: '#1F2937', subText: '#6B7280',
+    primary: '#059669', border: '#E5E7EB', input: '#F3F4F6', icon: '#4B5563',
+    dot: '#D1D5DB', dotActive: '#059669'
+  },
+  dark: {
+    background: '#111827', card: '#1F2937', text: '#F9FAFB', subText: '#9CA3AF',
+    primary: '#10B981', border: '#374151', input: '#374151', icon: '#D1D5DB',
+    dot: '#4B5563', dotActive: '#10B981'
+  }
+};
 
 export default function HomeScreen() {
   const router = useRouter();
   
+  // --- Theme Logic ---
+  const systemTheme = useColorScheme(); 
+  const [themeMode, setThemeMode] = useState(systemTheme || 'light'); 
+  const isDark = themeMode === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+
+  const toggleTheme = () => {
+    setThemeMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+  };
+
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  
-  // 👇 State cho ô tìm kiếm
   const [searchText, setSearchText] = useState(''); 
   const [loading, setLoading] = useState(true);
+  
+  const [cartCount, setCartCount] = useState(0); 
 
-  // --- 1. Fetch Data (Giữ nguyên) ---
+  const [activeBanner, setActiveBanner] = useState(0);
+  const bannerRef = useRef<FlatList>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // --- Logic Banner Tự Chạy ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Kiểm tra xem bannerRef có tồn tại không trước khi cuộn
+      if (bannerRef.current) {
+        let nextIndex = activeBanner + 1;
+        if (nextIndex >= BANNERS.length) nextIndex = 0;
+        
+        // Thử cuộn, nếu lỗi thì bỏ qua (catch)
+        try {
+          bannerRef.current.scrollToIndex({ index: nextIndex, animated: true });
+          setActiveBanner(nextIndex);
+        } catch (e) {
+          console.log("Banner scroll error ignored");
+        }
+      }
+    }, 3000); 
+    return () => clearInterval(interval);
+  }, [activeBanner]);
+
+  // --- Lắng nghe Cart Realtime ---
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const cartRef = ref(db, `carts/${user.uid}`);
+    const unsubscribe = onValue(cartRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const count = Object.keys(snapshot.val()).length;
+        setCartCount(count);
+      } else {
+        setCartCount(0);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const fetchData = async () => {
     try {
       const catRef = ref(db, 'categories');
@@ -39,172 +110,264 @@ export default function HomeScreen() {
         const prodData = productSnap.val();
         setProducts(Object.keys(prodData).map(key => ({ id: key, ...prodData[key] })));
       }
-    } catch (error) {
-      console.log("Lỗi:", error);
-    } finally {
-      setLoading(false);
-    }
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+    } catch (error) { console.log("Lỗi:", error); } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
-  // --- 2. Logic Lọc Kép (Category + Search) ---
   const filteredProducts = products.filter(p => {
-    // Điều kiện 1: Phải khớp Category (nếu đang chọn)
     const matchCategory = selectedCategory ? p.categoryId === selectedCategory : true;
-    
-    // Điều kiện 2: Phải khớp từ khóa tìm kiếm (không phân biệt hoa thường)
-    const matchSearch = p.name 
-      ? p.name.toLowerCase().includes(searchText.toLowerCase()) 
-      : false;
-
+    const matchSearch = p.name ? p.name.toLowerCase().includes(searchText.toLowerCase()) : false;
     return matchCategory && matchSearch;
   });
 
-  // --- Giao diện Item ---
-  const renderCategoryItem = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={[
-        styles.catItem, 
-        selectedCategory === item.id && styles.catItemActive
-      ]}
-      onPress={() => setSelectedCategory(item.id === selectedCategory ? null : item.id)}
-    >
-      <Image 
-        source={{ uri: item.image || 'https://cdn-icons-png.flaticon.com/512/751/751621.png' }} 
-        style={styles.catIcon} 
-      />
-      <Text style={[styles.catText, selectedCategory === item.id && styles.catTextActive]}>
-        {item.name}
-      </Text>
-    </TouchableOpacity>
-  );
+  const AnimatedProductCard = ({ item }: { item: any }) => {
+    const scaleValue = useRef(new Animated.Value(1)).current;
+    const onPressIn = () => Animated.spring(scaleValue, { toValue: 0.95, useNativeDriver: true }).start();
+    const onPressOut = () => Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true }).start();
 
-  const renderProductItem = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={styles.productCard}
-      onPress={() => {
-        router.push({
-          pathname: "/product/[id]",
-          params: { id: item.id, ...item }
-        });
-      }}
-    >
-      <Image 
-        source={{ uri: item.image || 'https://via.placeholder.com/150' }} 
-        style={styles.productImage} 
-        resizeMode="cover"
-      />
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.productPrice}>
-          {item.price ? Number(item.price).toLocaleString('vi-VN') : 0} đ
-        </Text>
-        <TouchableOpacity style={styles.addBtn}>
-           <Ionicons name="add" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
-
-  // --- 3. Phần Header (Logo + Search + Categories) ---
-  // Mình tách ra thành component con để nhét vào FlatList cho trôi mượt
-  const ListHeader =  (
-    <View>
-      {/* HEADER: Logo + Tên Quán */}
-      <View style={styles.headerContainer}>
-        <View style={styles.logoRow}>
-          <Image 
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2935/2935413.png' }} // Link Logo mẫu
-            style={styles.logo} 
-          />
-          <View>
-            <Text style={styles.brandName}>Nhật Coffee</Text>
-            <Text style={styles.brandSlogan}>Đậm đà hương vị Việt</Text>
+    return (
+      <Animated.View style={{ transform: [{ scale: scaleValue }] }}>
+        <TouchableOpacity 
+          style={[styles.productCard, { backgroundColor: theme.card }]}
+          activeOpacity={0.9} onPressIn={onPressIn} onPressOut={onPressOut}
+          onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id, ...item } })}
+        >
+          <Image source={{ uri: item.image || 'https://via.placeholder.com/150' }} style={styles.productImage} resizeMode="cover" />
+          <View style={styles.productInfo}>
+            <Text style={[styles.productName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+            <View style={styles.priceRow}>
+              <Text style={[styles.productPrice, { color: theme.primary }]}>
+                {item.price ? Number(item.price).toLocaleString('vi-VN') : 0} đ
+              </Text>
+              <TouchableOpacity style={[styles.addBtn, { backgroundColor: theme.primary }]}>
+                 <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const headerComponent = (
+    <View>
+      <View style={styles.headerContainer}>
+        <View>
+          <Text style={[styles.greetingText, { color: theme.subText }]}>Chào buổi sáng,</Text>
+          <Text style={[styles.brandName, { color: theme.text }]}>Nhật Coffee 👋</Text>
         </View>
-        <TouchableOpacity>
-           <Ionicons name="notifications-outline" size={24} color="#333" />
+        
+        <TouchableOpacity 
+          style={[styles.iconButton, { backgroundColor: theme.card }]}
+          onPress={toggleTheme} 
+        >
+           <Ionicons 
+             name={isDark ? "sunny" : "moon"} 
+             size={24} 
+             color={isDark ? "#FDB813" : theme.text} 
+           />
         </TouchableOpacity>
       </View>
 
-      {/* SEARCH BAR */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: theme.input }]}>
+        <Ionicons name="search" size={20} color={theme.subText} style={{ marginRight: 10 }} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Bạn muốn uống gì hôm nay?..."
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder="Tìm kiếm món ngon..."
+          placeholderTextColor={theme.subText}
           value={searchText}
-          onChangeText={setSearchText} // Cập nhật text khi gõ
+          onChangeText={setSearchText}
           clearButtonMode="while-editing"
         />
       </View>
 
-      {/* CATEGORIES */}
-      <Text style={styles.sectionTitle}>Danh mục</Text>
-      <FlatList
-        data={categories}
-        renderItem={renderCategoryItem}
-        keyExtractor={item => item.id}
-        horizontal={true}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10 }}
-      />
+      <View style={styles.bannerContainer}>
+        <FlatList
+          ref={bannerRef}
+          data={BANNERS}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={item => item.id}
+          // 👇 QUAN TRỌNG: Thêm dòng này để sửa lỗi scrollToIndex
+          getItemLayout={(data, index) => ({
+            length: BANNER_WIDTH,
+            offset: BANNER_WIDTH * index,
+            index,
+          })}
+          // 👇 Thêm dòng này để tránh lỗi crash nếu chưa load xong
+          onScrollToIndexFailed={info => {
+            const wait = new Promise(resolve => setTimeout(resolve, 500));
+            wait.then(() => {
+              bannerRef.current?.scrollToIndex({ index: info.index, animated: true });
+            });
+          }}
+          onScroll={(e) => {
+            const index = Math.round(e.nativeEvent.contentOffset.x / BANNER_WIDTH);
+            setActiveBanner(index);
+          }}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.bannerWrapper}>
+              <Image source={{ uri: item.image }} style={styles.bannerImage} resizeMode="cover" />
+            </TouchableOpacity>
+          )}
+        />
+        <View style={styles.pagination}>
+          {BANNERS.map((_, index) => (
+            <View 
+              key={index} 
+              style={[
+                styles.dot, 
+                { backgroundColor: activeBanner === index ? theme.dotActive : theme.dot }
+              ]} 
+            />
+          ))}
+        </View>
+      </View>
+
+      <View style={{ marginBottom: 20 }}>
+        <FlatList
+          data={categories}
+          keyExtractor={item => item.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          renderItem={({ item }) => {
+            const isActive = selectedCategory === item.id;
+            return (
+              <TouchableOpacity 
+                style={[
+                  styles.catItem, 
+                  { 
+                    backgroundColor: isActive ? theme.primary : theme.card,
+                    borderColor: isActive ? theme.primary : theme.border
+                  }
+                ]}
+                onPress={() => setSelectedCategory(isActive ? null : item.id)}
+              >
+                <Text style={[
+                  styles.catText, 
+                  { color: isActive ? '#fff' : theme.text, fontWeight: isActive ? '700' : '500' }
+                ]}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )
+          }}
+        />
+      </View>
       
-      <Text style={styles.sectionTitle}>Menu Món Ngon ☕️</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Gợi ý cho bạn</Text>
     </View>
   );
 
-  if (loading) return <ActivityIndicator size="large" style={{flex:1}} />;
+  if (loading) return (
+    <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
+      <ActivityIndicator size="large" color={theme.primary} />
+    </View>
+  );
   if (!auth.currentUser) return <AuthScreen onAuthenticated={fetchData} />;
 
   return (
-    <View style={styles.container}>
-      <FlatList
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      
+      <Animated.FlatList
         data={filteredProducts}
-        renderItem={renderProductItem}
+        renderItem={({ item }) => <AnimatedProductCard item={item} />}
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={{ justifyContent: 'space-between' }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={ListHeader} // Gắn phần Header vào đây
+        ListHeaderComponent={headerComponent}
+        style={{ opacity: fadeAnim }}
       />
+
+      <TouchableOpacity 
+        style={styles.floatingCartBtn}
+        onPress={() => router.push('/cart')} 
+      >
+        <Ionicons name="cart" size={28} color="white" />
+        {cartCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{cartCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  listContent: { padding: 16, paddingBottom: 80 }, // Padding đáy để không bị che bởi tab bar
+  container: { flex: 1 },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContent: { padding: 24, paddingBottom: 100 }, 
   
-  // Header Styles
-  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingHorizontal: 5, marginTop: 10 },
-  logoRow: { flexDirection: 'row', alignItems: 'center' },
-  logo: { width: 50, height: 50, marginRight: 10 },
-  brandName: { fontSize: 20, fontWeight: 'bold', color: '#2d3436' },
-  brandSlogan: { fontSize: 12, color: '#636e72' },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, marginTop: 10 },
+  greetingText: { fontSize: 14, marginBottom: 4 },
+  brandName: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  iconButton: { padding: 10, borderRadius: 14, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
 
-  // Search Bar Styles
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, paddingHorizontal: 12, height: 50, marginBottom: 20, borderWidth: 1, borderColor: '#eee' },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 16, height: '100%' },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 16, height: 52, marginBottom: 24 },
+  searchInput: { flex: 1, fontSize: 16, height: '100%', fontWeight: '500' },
 
-  // Category Styles
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#2d3436', marginBottom: 10, paddingHorizontal: 5 },
-  catItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'white', borderRadius: 25, marginRight: 10, borderWidth: 1, borderColor: '#eee' },
-  catItemActive: { backgroundColor: '#00b894', borderColor: '#00b894' },
-  catIcon: { width: 20, height: 20, marginRight: 5 },
-  catText: { fontWeight: '600', color: '#666' },
-  catTextActive: { color: 'white' },
+  bannerContainer: { marginBottom: 24, alignItems: 'center' },
+  bannerWrapper: { width: BANNER_WIDTH, height: BANNER_HEIGHT, marginRight: 0 }, 
+  bannerImage: { width: '100%', height: '100%', borderRadius: 16 },
+  pagination: { flexDirection: 'row', position: 'absolute', bottom: 10, alignSelf: 'center' },
+  dot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 4 },
 
-  // Product Styles
-  productCard: { width: COLUMN_WIDTH, backgroundColor: 'white', borderRadius: 16, marginBottom: 16, padding: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  productImage: { width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 8 },
+  catItem: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginRight: 12, borderWidth: 1 },
+  catText: { fontSize: 14 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 16 },
+
+  productCard: { 
+    width: COLUMN_WIDTH, borderRadius: 20, marginBottom: 20, padding: 10,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 
+  },
+  productImage: { width: '100%', aspectRatio: 1, borderRadius: 16, marginBottom: 12 },
   productInfo: { paddingHorizontal: 4 },
-  productName: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4 },
-  productPrice: { fontSize: 14, color: '#e67e22', fontWeight: 'bold' },
-  addBtn: { position: 'absolute', right: 0, bottom: -4, backgroundColor: '#00b894', borderRadius: 20, width: 30, height: 30, justifyContent: 'center', alignItems: 'center' }
+  productName: { fontSize: 15, fontWeight: '600', marginBottom: 6 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  productPrice: { fontSize: 15, fontWeight: 'bold' },
+  addBtn: { width: 32, height: 32, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+
+  floatingCartBtn: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#059669', 
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 999
+  },
+  badge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: 'red',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white'
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold'
+  }
 });
