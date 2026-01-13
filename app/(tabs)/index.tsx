@@ -1,11 +1,11 @@
 import { 
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, 
-  FlatList, Image, Dimensions, TextInput, useColorScheme, StatusBar, Animated 
+  FlatList, Image, Dimensions, TextInput, useColorScheme, StatusBar, Animated, Alert 
 } from 'react-native';
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../constants/firebaseConfig'; 
-import { ref, get, onValue } from 'firebase/database'; 
+import { ref, get, onValue, push, set } from 'firebase/database'; 
 import { Ionicons } from '@expo/vector-icons'; 
 import AuthScreen from '../../components/AuthScreen'; 
 
@@ -58,39 +58,29 @@ export default function HomeScreen() {
   const bannerRef = useRef<FlatList>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // --- Logic Banner Tự Chạy ---
+  // --- Logic Banner ---
   useEffect(() => {
     const interval = setInterval(() => {
-      // Kiểm tra xem bannerRef có tồn tại không trước khi cuộn
       if (bannerRef.current) {
         let nextIndex = activeBanner + 1;
         if (nextIndex >= BANNERS.length) nextIndex = 0;
-        
-        // Thử cuộn, nếu lỗi thì bỏ qua (catch)
         try {
           bannerRef.current.scrollToIndex({ index: nextIndex, animated: true });
           setActiveBanner(nextIndex);
-        } catch (e) {
-          console.log("Banner scroll error ignored");
-        }
+        } catch (e) { console.log("Banner scroll ignored"); }
       }
     }, 3000); 
     return () => clearInterval(interval);
   }, [activeBanner]);
 
-  // --- Lắng nghe Cart Realtime ---
+  // --- Cart Realtime ---
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-
     const cartRef = ref(db, `carts/${user.uid}`);
     const unsubscribe = onValue(cartRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const count = Object.keys(snapshot.val()).length;
-        setCartCount(count);
-      } else {
-        setCartCount(0);
-      }
+      if (snapshot.exists()) setCartCount(Object.keys(snapshot.val()).length);
+      else setCartCount(0);
     });
     return () => unsubscribe();
   }, []);
@@ -115,6 +105,26 @@ export default function HomeScreen() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // --- Quick Add ---
+  const handleQuickAdd = async (item: any) => {
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("Chưa đăng nhập", "Bạn cần đăng nhập để mua hàng!");
+      return;
+    }
+    try {
+      const cartRef = ref(db, `carts/${user.uid}`);
+      const newOrderRef = push(cartRef);
+      await set(newOrderRef, {
+        productId: item.id, name: item.name, image: item.image,
+        price: Number(item.price), quantity: 1, totalPrice: Number(item.price),
+        options: { size: 'S (Tiêu chuẩn)', sugar: '100%', ice: '100%', toppings: '' },
+        timestamp: new Date().toISOString()
+      });
+      Alert.alert("Đã thêm! 🛒", `Đã thêm 1 ly ${item.name} vào giỏ.`);
+    } catch (error) { Alert.alert("Lỗi", "Không thể thêm vào giỏ hàng."); }
+  };
 
   const filteredProducts = products.filter(p => {
     const matchCategory = selectedCategory ? p.categoryId === selectedCategory : true;
@@ -141,7 +151,10 @@ export default function HomeScreen() {
               <Text style={[styles.productPrice, { color: theme.primary }]}>
                 {item.price ? Number(item.price).toLocaleString('vi-VN') : 0} đ
               </Text>
-              <TouchableOpacity style={[styles.addBtn, { backgroundColor: theme.primary }]}>
+              <TouchableOpacity 
+                style={[styles.addBtn, { backgroundColor: theme.primary }]}
+                onPress={() => handleQuickAdd(item)}
+              >
                  <Ionicons name="add" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -156,19 +169,34 @@ export default function HomeScreen() {
       <View style={styles.headerContainer}>
         <View>
           <Text style={[styles.greetingText, { color: theme.subText }]}>Chào buổi sáng,</Text>
-          <Text style={[styles.brandName, { color: theme.text }]}>Nhật Coffee 👋</Text>
+          <Text style={[styles.brandName, { color: theme.text }]}>Nhật Coffee </Text>
         </View>
         
-        <TouchableOpacity 
-          style={[styles.iconButton, { backgroundColor: theme.card }]}
-          onPress={toggleTheme} 
-        >
-           <Ionicons 
-             name={isDark ? "sunny" : "moon"} 
-             size={24} 
-             color={isDark ? "#FDB813" : theme.text} 
-           />
-        </TouchableOpacity>
+        {/* 👇 KHU VỰC CÁC NÚT (THEME + THÔNG BÁO) */}
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          {/* Nút 1: Đổi Theme */}
+          <TouchableOpacity 
+            style={[styles.iconButton, { backgroundColor: theme.card }]}
+            onPress={toggleTheme} 
+          >
+             <Ionicons 
+               name={isDark ? "sunny" : "moon"} 
+               size={24} 
+               color={isDark ? "#FDB813" : theme.text} 
+             />
+          </TouchableOpacity>
+
+          {/* Nút 2: Thông Báo (Mới thêm) */}
+          <TouchableOpacity 
+            style={[styles.iconButton, { backgroundColor: theme.card }]}
+            onPress={() => router.push('/notifications')} 
+          >
+             <Ionicons name="notifications-outline" size={24} color={theme.text} />
+             {/* Chấm đỏ báo hiệu có tin mới */}
+             <View style={styles.redDot} />
+          </TouchableOpacity>
+        </View>
+        {/* 👆 KẾT THÚC */}
       </View>
 
       <View style={[styles.searchContainer, { backgroundColor: theme.input }]}>
@@ -191,13 +219,11 @@ export default function HomeScreen() {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           keyExtractor={item => item.id}
-          // 👇 QUAN TRỌNG: Thêm dòng này để sửa lỗi scrollToIndex
           getItemLayout={(data, index) => ({
             length: BANNER_WIDTH,
             offset: BANNER_WIDTH * index,
             index,
           })}
-          // 👇 Thêm dòng này để tránh lỗi crash nếu chưa load xong
           onScrollToIndexFailed={info => {
             const wait = new Promise(resolve => setTimeout(resolve, 500));
             wait.then(() => {
@@ -310,6 +336,7 @@ const styles = StyleSheet.create({
   greetingText: { fontSize: 14, marginBottom: 4 },
   brandName: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   iconButton: { padding: 10, borderRadius: 14, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  redDot: { position: 'absolute', top: 8, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 1, borderColor: 'white' },
 
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 16, height: 52, marginBottom: 24 },
   searchInput: { flex: 1, fontSize: 16, height: '100%', fontWeight: '500' },
@@ -336,38 +363,15 @@ const styles = StyleSheet.create({
   addBtn: { width: 32, height: 32, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
 
   floatingCartBtn: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#059669', 
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#059669",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-    zIndex: 999
+    position: 'absolute', bottom: 20, right: 20, width: 60, height: 60,
+    borderRadius: 30, backgroundColor: '#059669', 
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: "#059669", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6, zIndex: 999
   },
   badge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: 'red',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white'
+    position: 'absolute', top: -5, right: -5, backgroundColor: 'red',
+    width: 24, height: 24, borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white'
   },
-  badgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold'
-  }
+  badgeText: { color: 'white', fontSize: 12, fontWeight: 'bold' }
 });

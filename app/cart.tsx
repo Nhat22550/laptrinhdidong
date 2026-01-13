@@ -2,7 +2,7 @@ import {
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator 
 } from 'react-native';
 import React, { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../constants/firebaseConfig';
 import { ref, onValue, remove, push, set } from 'firebase/database';
@@ -129,6 +129,7 @@ export default function CartScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>

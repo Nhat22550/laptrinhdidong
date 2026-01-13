@@ -135,6 +135,16 @@ export default function ProductDetailScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen 
+        options={{
+          headerTitle: "Chi tiết món ăn", // Đổi tên tiếng Việt ở đây
+          headerTitleAlign: 'center', // Căn giữa tiêu đề
+          
+          headerTintColor: '#000', // Màu nút back
+          // Nếu bạn muốn ẩn luôn thanh trắng đi để ảnh tràn lên (đẹp hơn):
+          // headerShown: false 
+        }} 
+      />
       <StatusBar barStyle="light-content" />
       
       {/* 1. Nút Back (Tuyệt đối trên cùng) */}

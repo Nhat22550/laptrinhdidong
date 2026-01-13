@@ -7,11 +7,12 @@ import { Phone, Lock, User, Eye, EyeOff, ArrowRight } from 'lucide-react-native'
 import { AntDesign } from '@expo/vector-icons'; 
 
 // --- 1. IMPORT FIREBASE ---
-import { auth } from '../constants/firebaseConfig';// Đảm bảo đường dẫn đúng tới file config bạn vừa tạo
+import { auth } from '../constants/firebaseConfig'; 
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
-  updateProfile 
+  updateProfile,
+  signOut // 👈 Đã thêm signOut vào đây
 } from 'firebase/auth';
 import { getDatabase, ref, set } from 'firebase/database';
 
@@ -23,7 +24,7 @@ interface AuthScreenProps {
 export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false); // Thêm trạng thái loading
+  const [loading, setLoading] = useState(false);
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -48,40 +49,52 @@ export default function AuthScreen({ onAuthenticated, onForgotPassword }: AuthSc
 
     try {
       if (isLogin) {
-        // --- XỬ LÝ ĐĂNG NHẬP ---
+        // --- A. XỬ LÝ ĐĂNG NHẬP (Giữ nguyên) ---
         const userCredential = await signInWithEmailAndPassword(auth, fakeEmail, password);
         console.log('Đăng nhập thành công:', userCredential.user.email);
         Alert.alert('Thành công', 'Đăng nhập thành công!');
         if (onAuthenticated) onAuthenticated();
       } else {
-        // --- XỬ LÝ ĐĂNG KÝ ---
+        // --- B. XỬ LÝ ĐĂNG KÝ (ĐÃ SỬA LẠI) ---
         const userCredential = await createUserWithEmailAndPassword(auth, fakeEmail, password);
-        const user = userCredential.user; // Lấy user vừa tạo
+        const user = userCredential.user; 
 
-        // Cập nhật tên hiển thị
+        // 1. Cập nhật tên hiển thị
         if (user) {
           await updateProfile(user, { displayName: name });
         }
 
-        // 👇 ĐOẠN CODE MỚI: LƯU VÀO REALTIME DATABASE 👇
+        // 2. Lưu vào Realtime Database
         const db = getDatabase(); 
         await set(ref(db, 'users/' + user.uid), {
           phoneNumber: phoneNumber,
           displayName: name,
           email: fakeEmail,
-          role: "user", // Mặc định là user thường
+          role: "user", 
           createdAt: new Date().toISOString()
         });
         
         console.log('Đăng ký thành công:', userCredential.user.email);
-        Alert.alert('Thành công', 'Tạo tài khoản thành công!');
-        if (onAuthenticated) onAuthenticated();
+
+        // 👇👇👇 THAY ĐỔI QUAN TRỌNG Ở ĐÂY 👇👇👇
+        
+        // 3. Đăng xuất ngay lập tức (vì Firebase tự login sau khi đăng ký)
+        await signOut(auth);
+
+        // 4. Thông báo người dùng
+        Alert.alert('Thành công', 'Đăng ký tài khoản thành công! Vui lòng đăng nhập.');
+
+        // 5. Chuyển giao diện về Tab "Đăng Nhập"
+        setIsLogin(true);
+        setPassword(''); // Xóa mật khẩu để người dùng nhập lại
+        
+        // ⛔ KHÔNG gọi onAuthenticated() ở đây nữa
       }
     } catch (error: any) {
       console.error(error);
       let msg = error.message;
       
-      // Dịch lỗi Firebase sang tiếng Việt cho thân thiện
+      // Dịch lỗi Firebase sang tiếng Việt
       if (msg.includes('auth/email-already-in-use')) msg = 'Số điện thoại này đã được đăng ký!';
       else if (msg.includes('auth/invalid-credential')) msg = 'Sai số điện thoại hoặc mật khẩu!';
       else if (msg.includes('auth/weak-password')) msg = 'Mật khẩu phải có ít nhất 6 ký tự!';
