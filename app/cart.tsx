@@ -5,7 +5,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../constants/firebaseConfig';
-import { ref, onValue, remove, push, set } from 'firebase/database';
+import { ref, onValue, remove } from 'firebase/database'; // Bỏ push, set vì không tạo đơn ở đây nữa
 
 // --- 🎨 Màu sắc Minimalist ---
 const Colors = {
@@ -28,12 +28,11 @@ export default function CartScreen() {
     if (!user) return;
 
     const cartRef = ref(db, `carts/${user.uid}`);
-    // onValue giúp cập nhật ngay lập tức khi có thay đổi (thêm/xóa)
     const unsubscribe = onValue(cartRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const items = Object.keys(data).map(key => ({
-          id: key, // ID của đơn hàng trong giỏ
+          id: key, 
           ...data[key]
         }));
         setCartItems(items);
@@ -68,33 +67,23 @@ export default function CartScreen() {
     ]);
   };
 
-  // 4. Chốt đơn (Checkout)
-  const handleCheckout = async () => {
-    if (cartItems.length === 0) return;
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // a. Tạo đơn hàng mới trong nhánh 'orders'
-      const orderRef = push(ref(db, 'orders'));
-      await set(orderRef, {
-        userId: user.uid,
-        userName: user.displayName || "Khách hàng",
-        items: cartItems,
-        totalAmount: totalAmount,
-        status: 'pending', // Trạng thái: Chờ xác nhận
-        createdAt: new Date().toISOString()
-      });
-
-      // b. Xóa sạch giỏ hàng sau khi đặt xong
-      await remove(ref(db, `carts/${user.uid}`));
-
-      Alert.alert("Thành công! 🎉", "Đơn hàng của bạn đã được gửi đi.", [
-        { text: "OK", onPress: () => router.back() }
-      ]);
-    } catch (error) {
-      Alert.alert("Lỗi", "Đặt hàng thất bại, vui lòng thử lại.");
+  // 👇👇👇 THAY ĐỔI QUAN TRỌNG Ở ĐÂY 👇👇👇
+  // 4. Chuyển sang trang Thanh toán (Checkout)
+  const handleCheckout = () => {
+    if (cartItems.length === 0) {
+      Alert.alert("Giỏ hàng trống", "Vui lòng chọn món trước khi đặt hàng!");
+      return;
     }
+    
+    // Chuyển hướng sang màn hình CheckoutScreen
+    // Lưu ý: Tên file là CheckoutScreen.js nên path là /CheckoutScreen
+    router.push({
+    pathname: '/checkout',
+    params: { 
+      total: totalAmount, // Gửi tổng tiền
+      items: JSON.stringify(cartItems) // Gửi danh sách món (phải chuyển sang chuỗi text)
+    }
+  }); 
   };
 
   const renderItem = ({ item }: { item: any }) => (
@@ -109,7 +98,6 @@ export default function CartScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Hiển thị Option (Size, Topping...) */}
         <Text style={styles.options}>
           Size {item.options?.size} • {item.options?.sugar} đường • {item.options?.ice} đá
         </Text>
@@ -167,7 +155,8 @@ export default function CartScreen() {
             <Text style={styles.totalValue}>{totalAmount.toLocaleString('vi-VN')} đ</Text>
           </View>
           <TouchableOpacity style={styles.checkoutBtn} onPress={handleCheckout}>
-            <Text style={styles.checkoutText}>Đặt hàng ngay</Text>
+            <Text style={styles.checkoutText}>Tiến hành thanh toán</Text>
+            <Ionicons name="arrow-forward" size={16} color="white" style={{marginLeft: 5}}/>
           </TouchableOpacity>
         </View>
       )}
@@ -193,7 +182,7 @@ const styles = StyleSheet.create({
   footer: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'white', padding: 20, borderTopWidth: 1, borderTopColor: '#eee', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 30 },
   totalLabel: { fontSize: 12, color: '#6B7280' },
   totalValue: { fontSize: 22, fontWeight: 'bold', color: '#059669' },
-  checkoutBtn: { backgroundColor: '#059669', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 25 },
+  checkoutBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#059669', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 25 },
   checkoutText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   emptyContainer: { alignItems: 'center', marginTop: 100 },

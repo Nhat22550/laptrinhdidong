@@ -2,7 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 // Nếu bạn muốn dùng Auth, Firestore, Storage thì import thêm ở đây
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
-
+import { getStorage } from "firebase/storage";
 // Dán cấu hình bạn vừa copy từ bước 1 vào đây
 const firebaseConfig = {
   apiKey: "AIzaSyDYLyBEfW9CvppY3Pug034lqamZByxizG4",
@@ -18,7 +18,8 @@ const firebaseConfig = {
 // Khởi tạo Firebase
 // Nghĩa là: Nếu chưa có App nào thì tạo mới, còn nếu có rồi thì lấy cái cũ ra dùng
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-
+const storage = getStorage(app);
 // Xuất các dịch vụ ra để dùng
 export const auth = getAuth(app);
 export const db = getDatabase(app);
+export {  storage }
