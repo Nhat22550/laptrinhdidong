@@ -1,140 +1,138 @@
-import { 
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Image, useColorScheme 
-} from 'react-native';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-// --- 🎨 Dữ liệu giả lập (Sau này lấy từ Firebase) ---
-const NOTIFICATIONS = [
-  {
-    id: '1',
-    title: 'Đơn hàng hoàn tất 🥤',
-    message: 'Đơn hàng #DH001 của bạn đã được pha chế xong. Mời bạn đến quầy nhận món nhé!',
-    time: 'Vừa xong',
-    type: 'order', // Loại: đơn hàng
-    isRead: false,
-  },
-  {
-    id: '2',
-    title: 'Khuyến mãi khủng 50% 🎉',
-    message: 'Nhập mã NHATCOFFEE giảm ngay 50% cho đơn hàng từ 100k. Hạn chót hôm nay!',
-    time: '2 giờ trước',
-    type: 'promo', // Loại: khuyến mãi
-    isRead: false,
-  },
-  {
-    id: '3',
-    title: 'Xác nhận đơn hàng',
-    message: 'Đơn hàng #DH001 đã được tiếp nhận. Chúng tôi đang chuẩn bị...',
-    time: '3 giờ trước',
-    type: 'order',
-    isRead: true,
-  },
-  {
-    id: '4',
-    title: 'Chào mừng bạn mới 👋',
-    message: 'Cảm ơn bạn đã cài đặt ứng dụng Nhật Coffee. Chúc bạn một ngày tốt lành!',
-    time: '1 ngày trước',
-    type: 'system',
-    isRead: true,
-  },
-];
-
-const Colors = {
-  light: { bg: '#F9FAFB', card: '#FFF', text: '#1F2937', sub: '#6B7280', iconBg: '#F3F4F6' },
-  dark: { bg: '#111827', card: '#1F2937', text: '#F9FAFB', sub: '#9CA3AF', iconBg: '#374151' }
-};
+import { Coffee, Gift, Info } from 'lucide-react-native'; // Cần cài: npx expo install lucide-react-native
+import { auth, db } from '../constants/firebaseConfig';
+import { ref, onValue, query, orderByChild } from 'firebase/database';
 
 export default function NotificationScreen() {
   const router = useRouter();
-  const themeMode = useColorScheme();
-  const theme = themeMode === 'dark' ? Colors.dark : Colors.light;
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const getIcon = (type: string) => {
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    // Lắng nghe nhánh notifications của user hiện tại
+    const notiRef = ref(db, `notifications/${user.uid}`);
+    
+    // Sắp xếp (Tuy nhiên Firebase sort hơi hạn chế, ta sẽ sort lại bằng JS bên dưới)
+    const unsubscribe = onValue(notiRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const loadedNotis = Object.keys(data).map(key => ({
+          id: key,
+          ...data[key]
+        }));
+        
+        // Sắp xếp mới nhất lên đầu
+        loadedNotis.sort((a, b) => b.createdAt - a.createdAt);
+        
+        setNotifications(loadedNotis);
+      } else {
+        setNotifications([]);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Hàm render Icon dựa theo loại thông báo
+  const renderIcon = (type: string) => {
     switch (type) {
-      case 'order': return { name: 'cafe', color: '#059669' }; // Xanh lá
-      case 'promo': return { name: 'gift', color: '#D97706' }; // Vàng cam
-      default: return { name: 'information-circle', color: '#3B82F6' }; // Xanh dương
+      case 'order':
+        return <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}><Coffee size={24} color="#059669" /></View>;
+      case 'promo':
+        return <View style={[styles.iconBox, { backgroundColor: '#FFF7ED' }]}><Gift size={24} color="#EA580C" /></View>;
+      case 'system':
+      default:
+        return <View style={[styles.iconBox, { backgroundColor: '#EFF6FF' }]}><Info size={24} color="#3B82F6" /></View>;
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => {
-    const iconData = getIcon(item.type);
+  // Hàm tính thời gian tương đối (Vừa xong, 2 giờ trước...)
+  const getRelativeTime = (timestamp: number) => {
+    if (!timestamp) return '';
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
 
-    return (
-      <TouchableOpacity 
-        style={[
-          styles.card, 
-          { backgroundColor: theme.card, opacity: item.isRead ? 0.7 : 1 } // Đã đọc thì mờ đi chút
-        ]}
-      >
-        {/* Cột trái: Icon */}
-        <View style={[styles.iconBox, { backgroundColor: theme.iconBg }]}>
-          <Ionicons name={iconData.name as any} size={24} color={iconData.color} />
-          {!item.isRead && <View style={styles.unreadDot} />}
-        </View>
-
-        {/* Cột phải: Nội dung */}
-        <View style={styles.content}>
-          <View style={styles.headerRow}>
-            <Text style={[styles.title, { color: theme.text }]}>{item.title}</Text>
-            <Text style={styles.time}>{item.time}</Text>
-          </View>
-          <Text style={[styles.message, { color: theme.sub }]} numberOfLines={2}>
-            {item.message}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
+    if (minutes < 1) return 'Vừa xong';
+    if (minutes < 60) return `${minutes} phút trước`;
+    if (hours < 24) return `${hours} giờ trước`;
+    return `${days} ngày trước`;
   };
 
-  return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <Stack.Screen options={{ headerShown: false }} />
-      
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.card }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Thông báo</Text>
-        <View style={{ width: 24 }} />
+  const renderItem = ({ item }: { item: any }) => (
+    <TouchableOpacity style={[styles.card, !item.isRead && styles.unreadCard]}>
+      {/* Icon bên trái */}
+      <View style={styles.leftCol}>
+        {renderIcon(item.type)}
+        {!item.isRead && <View style={styles.redDot} />}
       </View>
 
-      {/* List */}
-      <FlatList
-        data={NOTIFICATIONS}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-off-outline" size={60} color={theme.sub} />
-            <Text style={[styles.emptyText, { color: theme.sub }]}>Chưa có thông báo nào</Text>
-          </View>
-        }
-      />
+      {/* Nội dung bên phải */}
+      <View style={styles.rightCol}>
+        <View style={styles.headerRow}>
+          <Text style={styles.notiTitle}>{item.title}</Text>
+          <Text style={styles.timeText}>{getRelativeTime(item.createdAt)}</Text>
+        </View>
+        <Text style={styles.notiMessage} numberOfLines={2}>{item.message}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      <Stack.Screen options={{ title: 'Thông báo', headerShadowVisible: false }} />
+      
+      {loading ? (
+        <ActivityIndicator size="large" color="#059669" style={{marginTop: 50}} />
+      ) : notifications.length === 0 ? (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="notifications-off-outline" size={60} color="#ccc" />
+            <Text style={{color: 'gray', marginTop: 10}}>Chưa có thông báo nào</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={notifications}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ padding: 16 }}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50, shadowColor: '#000', shadowOpacity: 0.05, elevation: 2 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
-  backBtn: { padding: 4 },
-
-  card: { flexDirection: 'row', padding: 16, marginBottom: 12, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.03, elevation: 1 },
-  iconBox: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginRight: 16, position: 'relative' },
-  unreadDot: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#EF4444', borderWidth: 2, borderColor: 'white' },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   
-  content: { flex: 1, justifyContent: 'center' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  title: { fontSize: 16, fontWeight: 'bold', flex: 1, marginRight: 8 },
-  time: { fontSize: 12, color: '#9CA3AF' },
-  message: { fontSize: 14, lineHeight: 20 },
+  card: {
+    flexDirection: 'row', backgroundColor: 'white', padding: 16, marginBottom: 12,
+    borderRadius: 16,
+    // Shadow nhẹ
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2,
+  },
+  unreadCard: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0', borderWidth: 1 }, // Highlight tin chưa đọc
+  
+  leftCol: { marginRight: 16, position: 'relative' },
+  iconBox: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  redDot: { 
+    position: 'absolute', top: 0, right: 0, width: 10, height: 10, 
+    borderRadius: 5, backgroundColor: '#EF4444', borderWidth: 1.5, borderColor: 'white' 
+  },
 
-  emptyContainer: { alignItems: 'center', marginTop: 100 },
-  emptyText: { marginTop: 10, fontSize: 14 }
+  rightCol: { flex: 1, justifyContent: 'center' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  notiTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
+  timeText: { fontSize: 12, color: '#9CA3AF' },
+  notiMessage: { fontSize: 14, color: '#4B5563', lineHeight: 20 },
 });

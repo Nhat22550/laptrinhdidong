@@ -101,6 +101,7 @@ export default function CheckoutScreen() {
 
     try {
       const newOrderRef = push(ref(db, 'orders'));
+      const userId = auth.currentUser.uid;
       await set(newOrderRef, {
         userId: auth.currentUser.uid,
         orderCode: orderCode,
@@ -114,7 +115,16 @@ export default function CheckoutScreen() {
         customerName: userInfo.name,
         customerPhone: userInfo.phone
       });
-
+      // 👇 2. TẠO THÔNG BÁO MỚI (Thêm đoạn này) 👇
+      const notificationRef = push(ref(db, `notifications/${userId}`));
+      await set(notificationRef, {
+        title: 'Xác nhận đơn hàng',
+        message: `Đơn hàng #${orderCode} đã được tiếp nhận. Chúng tôi đang chuẩn bị món cho bạn.`,
+        type: 'order', // Loại thông báo: order | promo | system
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
+      // 👆 KẾT THÚC ĐOẠN THÊM 👆
       Alert.alert("Thành công", "Đặt hàng thành công!", [
         { text: "OK", onPress: () => router.replace('/order-history') } 
       ]);
